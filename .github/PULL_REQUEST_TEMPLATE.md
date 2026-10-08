@@ -5,10 +5,11 @@
 <!-- Qué hace este PR, en 2-3 líneas -->
 
 ## Checklist
-- [ ] La propuesta OpenSpec fue aprobada antes de implementar
-- [ ] spec.md fue actualizado con los deltas correspondientes
-- [ ] Cada Scenario de spec.md tiene al menos un test automatizado
-- [ ] No se reimplementó lógica de observabilidad/seguridad/diseño ya existente en las librerías de plataforma
-- [ ] Si se modificó un contrato cruzado, el repo consumidor fue notificado/revisor agregado
-- [ ] Si se modificó un componente de UI compartido, el snapshot visual fue actualizado
-- [ ] `openspec archive` pendiente de ejecutar tras el merge
+- [ ] La propuesta fue aprobada por una persona antes de implementar (comentario con el hash)
+- [ ] `openspec validate <change-id> --strict` pasa
+- [ ] La spec del change refleja lo implementado
+- [ ] Cada Scenario de la spec tiene al menos un test automatizado
+- [ ] Si el change toca el modelo, incluye su migración Flyway
+- [ ] Los errores nuevos tienen su `type` registrado en la spec
+- [ ] Si cambió la API, la spec y el OpenAPI lo reflejan
+- [ ] `/opsx:archive` ejecutado como último commit del branch, con los tests en verde
