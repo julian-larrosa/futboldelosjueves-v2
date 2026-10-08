@@ -19,6 +19,8 @@ por una propuesta aprobada en openspec/changes/.
   también fuera del ciclo de OpenSpec.
 - El roadmap está en docs/roadmap.md; actualizarlo si cambia el plan.
 - Branch por change: change/<change-id>. Título del PR: [<change-id>] ...
+- Nunca hacer push, abrir PR ni mergear sin confirmación explícita del
+  usuario, aunque el pedido los incluya: primero mostrar el diff y esperar.
 - Change IDs con el formato liga-api-<verbo>-<slug>.
 
 ## Componentes transversales
