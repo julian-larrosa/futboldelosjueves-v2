@@ -267,17 +267,23 @@ Organización del trabajo
   Testcontainers. La base de producción no está definida y PostgreSQL 19
   todavía está en beta; revisar al definir producción.
 
-### 5.3 Pendiente
+### 5.3 Sesión (resuelto en el change 1)
 
-- **Sesión**: cookie de sesión del servidor o token propio, y si se usa Spring
-  Security como framework. Se decide en el change 1.
+- **Sesión**: JWT propio de acceso con Spring Security, firmado con HS256. El
+  JWT de usuario dura 60 minutos y no se renueva: el frontend vuelve a
+  autenticarse con Google. El rol se lee de la base en cada request.
+  Limitación aceptada: el logout es solo del cliente. Detalle en
+  `openspec/changes/liga-api-agregar-login-google/`.
 
 ---
 
 ## 6. Preguntas abiertas por change
 
-1. **login-google**: Mecanismo de sesión (5.3). ¿Qué puede hacer alguien
-   autenticado en Google pero no registrado? ¿Hay logout?
+1. **login-google**: Mecanismo de sesión: resuelto (5.3). Logout: no hay
+   endpoint; es solo del cliente (limitación aceptada). Quien está autenticado
+   en Google pero no registrado recibe un token de registro pendiente de 15
+   minutos que solo sirve para consultar su sesión. Esto último es un supuesto
+   pendiente de confirmar en la propuesta del change.
 2. **registro-usuario**: ¿Un JUGADOR puede pasar a HINCHA? ¿Qué datos se piden
    además del Gmail?
 3. **consulta-usuarios**: ¿Quién puede listar usuarios y qué ve cada rol?
