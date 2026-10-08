@@ -22,6 +22,8 @@ por una propuesta aprobada en openspec/changes/.
 - Nunca hacer push, abrir PR ni mergear sin confirmación explícita del
   usuario, aunque el pedido los incluya: primero mostrar el diff y esperar.
 - Change IDs con el formato liga-api-<verbo>-<slug>.
+- El flujo completo de un change, con quién actúa en cada paso, está en docs/flujo-de-trabajo.md.
+- El branch del change se crea después del explore y antes del propose.
 
 ## Componentes transversales
 - No existen librerías de plataforma: la autenticación se implementa en este
