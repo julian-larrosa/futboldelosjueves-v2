@@ -341,7 +341,7 @@ incluye secretos.
   configurado. Si existe, lanza una `IllegalStateException` que nombra el id del
   usuario y `LIGA_ADMIN_EMAIL`, sin modificar nada. Así la aplicación no
   arranca: degradarlo violaría el CHECK de `google_sub`.
-  - Este comportamiento es un supuesto pendiente de la propuesta.
+  - Es la decisión 27 de la propuesta.
 - Si no, hace `UPDATE` a `JUGADOR` de los `ADMIN` cuyo correo es distinto del
   configurado.
 - Por cada degradado escribe un `WARN` con su id; no loguea el correo.
@@ -376,8 +376,7 @@ CREATE UNIQUE INDEX usuarios_un_solo_admin ON usuarios (rol) WHERE rol = 'ADMIN'
   - El login siempre crea filas con `sub`, así que el nulo solo aparece cuando
     alguien lo borra a mano en la fila del admin.
   - PostgreSQL permite varios `NULL` en una columna `UNIQUE`.
-- **Columnas en español y snake_case:** extiende a las columnas la convención
-  confirmada para las tablas. Es un supuesto pendiente de la propuesta.
+- **Columnas en español y snake_case:** decisión 26 de la propuesta.
 - **`id`:** UUID generado en la app (`@UuidGenerator` de Hibernate), sin depender
   de funciones de PostgreSQL 18.
 - **Auditoría:** `creado_en` y `modificado_en` con la auditoría de Spring Data

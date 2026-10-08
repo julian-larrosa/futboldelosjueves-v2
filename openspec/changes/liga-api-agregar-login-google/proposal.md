@@ -155,22 +155,12 @@ Confirmadas explícitamente por una persona:
 24. **Recuperación del admin:** `google_sub` es nulable solo para el admin, con
     `CHECK (google_sub IS NOT NULL OR rol = 'ADMIN')`.
 25. **`nonce`:** no se usa en el login con Google.
-
-## Supuestos pendientes de confirmar
-
-- **Columnas en español y snake_case** (`correo`, `creado_en`,
-  `modificado_en`). La decisión 9 confirma la convención para las tablas; la
-  extiendo a las columnas.
-- **Reconciliación con un admin sin `sub`.** Caso: al arrancar hay un ADMIN con
-  `google_sub` nulo (recuperación a medio hacer) cuyo correo no coincide con
-  `LIGA_ADMIN_EMAIL`.
-  - No se puede degradar a JUGADOR, porque violaría el CHECK de la decisión 24.
-  - Propuesta: la aplicación no arranca, con un error que nombra el id del
-    usuario y `LIGA_ADMIN_EMAIL`, para que se complete el `sub` o se corrija la
-    configuración.
-  - Alternativas descartadas:
-    - Dejarlo como ADMIN: el nuevo admin chocaría con el índice de admin único.
-    - Borrarlo: no hay baja de usuarios.
+26. **Columnas:** en español y snake_case (`correo`, `creado_en`,
+    `modificado_en`), igual que las tablas.
+27. **Reconciliación con un admin sin `sub`:** si al arrancar hay un ADMIN con
+    `google_sub` nulo cuyo correo no coincide con `LIGA_ADMIN_EMAIL`, la
+    aplicación no arranca. El error nombra el id del usuario y
+    `LIGA_ADMIN_EMAIL`, y no se modifica ningún usuario.
 
 ## Limitaciones aceptadas
 
