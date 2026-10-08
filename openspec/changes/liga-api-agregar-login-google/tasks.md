@@ -16,10 +16,11 @@
 - [ ] 2.1 Crear `db/migration/V1__crear_usuarios.sql` según design D10; verificar que el contexto levanta con Flyway contra Testcontainers y `ddl-auto=validate`
 - [ ] 2.2 Crear `usuarios.model.Usuario`, `Rol` y `usuarios.repository.UsuarioRepository`, con la auditoría de Spring Data JPA basada en el `Clock`; verificar con un test de repositorio que guarda y relee un usuario con `creado_en` y `modificado_en`
 - [ ] 2.3 Test de repositorio que verifica que la base rechaza un segundo usuario `ADMIN` (índice `usuarios_un_solo_admin`); verificar que pasa
+- [ ] 2.4 Test de repositorio "Usuario no admin sin sub" (CHECK `usuarios_sub_solo_admin_vacio`, con JUGADOR y con HINCHA); verificar que pasa
 
 ## 3. JWT propio, cadena de seguridad, errores y sesión actual
 
-- [ ] 3.1 Crear `comun.error.TipoError` (catálogo idéntico al de la spec), `ApiException` y `ManejadorErrores` (único `@RestControllerAdvice`, sin `about:blank`, 4xx del framework según D7, 500 sin detalles); verificar con los tests 3.8 a 3.10
+- [ ] 3.1 Crear `comun.error.TipoError` (catálogo idéntico al de la spec, con `type`, status y `title`), `ApiException` y `ManejadorErrores` (único `@RestControllerAdvice`, sin `about:blank`, 4xx del framework según D7, 500 sin detalles); verificar con los tests 3.8 a 3.10
 - [ ] 3.2 Implementar el emisor y el decoder del JWT propio (HS256, `iss=backend-fdlj`, claim `tipo`, validador de `exp` con código `token_vencido` y 60 s de tolerancia); verificar con un test unitario que emite y decodifica los dos tipos de token
 - [ ] 3.3 Implementar el converter `Jwt` → autenticación (rol leído de la base, `RegistroPendiente` sin base) y la cadena de seguridad de D6: stateless, sin CSRF, reglas en orden, resolver bearer que ignora `POST /api/v1/sesiones`, y entry point y access-denied handler delegando en el `HandlerExceptionResolver`; verificar con los tests 3.5 a 3.10
 - [ ] 3.4 Crear `SesionController` con `GET /api/v1/sesiones/actual` y los DTOs (records) de D1; verificar con los tests 3.5
@@ -37,23 +38,25 @@
 - [ ] 4.3 Implementar `LoginService` según D4 (`email_verified`, normalización del correo, búsqueda por `sub`, admin con `sub` fijado, recuperación manual, sincronización de correo y nombre, recálculo del rol, 409, registro pendiente sin escritura, `DataIntegrityViolationException` → 409); verificar con los tests 4.7 a 4.10
 - [ ] 4.4 Agregar `POST /api/v1/sesiones` a `SesionController` con `@Valid` sobre `tokenGoogle`; verificar con los tests 4.5
 - [ ] 4.5 Tests "Login de un usuario existente", "Login con un JWT propio vencido en el header", "Login con un JWT propio válido no reemplaza al token de Google", "Cuerpo sin token de Google" y "Login sin token"; verificar que pasan
-- [ ] 4.6 Tests "Token de Google con firma inválida", "Token de Google con otro algoritmo", "Token de Google de otro emisor", "Token de Google para otra aplicación", "Token de Google vencido", "Token de Google mal formado" y "El token no aparece en el log" (con `OutputCaptureExtension`); verificar que pasan
+- [ ] 4.6 Tests "Token de Google con firma inválida", "Token de Google con otro algoritmo", "Token de Google de otro emisor", "Token de Google para otra aplicación", "Token de Google vencido", "Token de Google mal formado", "El token no aparece en el log" (con `OutputCaptureExtension`) y "Reuso de un token de Google vigente"; verificar que pasan
 - [ ] 4.7 Tests "Login con correo verificado" y "Login con correo no verificado"; verificar que pasan
 - [ ] 4.8 Tests "Primer login del admin", "Correo del admin con otro sub" y "Recuperación manual del admin"; verificar que pasan
 - [ ] 4.9 Tests "Cambio de nombre en Google", "El admin cambia su correo en Google" y "Correo nuevo de otro usuario"; verificar que pasan
 - [ ] 4.10 Tests "Login de una cuenta sin registrar", "Vencimiento del token de usuario" y "Vencimiento del token de registro pendiente"; verificar que pasan
 - [ ] 4.11 Tests "ID token de Google usado como JWT propio", "Tipo de contenido no soportado", "JSON mal formado" y "Error inesperado" (con `@MockitoBean UsuarioRepository`); verificar que pasan
 - [ ] 4.12 Test "Arranque con la configuración completa"; verificar que pasa
+- [ ] 4.13 Tests "El login indica cuenta registrada", "El login indica registro pendiente" y "Un login rechazado no indica estado"; verificar que pasan
 
 ## 5. Reconciliación del admin al arrancar
 
-- [ ] 5.1 Implementar `ReconciliadorAdmin` (`ApplicationRunner` transaccional e idempotente, con un `WARN` con el id por cada admin degradado); verificar con los tests 5.2
-- [ ] 5.2 Tests "Cambio del correo de admin configurado" (con `OutputCaptureExtension` para el aviso) y "El admin anterior no recupera el rol"; verificar que pasan
+- [ ] 5.1 Implementar `ReconciliadorAdmin` según D9 (`ApplicationRunner` transaccional e idempotente; falla sin modificar nada si hay un admin sin `sub` con otro correo; `WARN` con el id por cada admin degradado); verificar con los tests 5.2 y 5.3
+- [ ] 5.2 Tests "Cambio del correo de admin configurado" (con `OutputCaptureExtension` para el aviso), "El admin anterior no recupera el rol" y "Reconciliación con un admin sin sub"; verificar que pasan
+- [ ] 5.3 Test "El admin cambia su correo y se actualiza la configuración" (reconciliación + login con el mismo `sub`, mismo `usuario.id`); verificar que pasa
 
 ## 6. CORS
 
-- [ ] 6.1 Implementar la `CorsConfigurationSource` de D8, el bean `corsFilter` con el `CorsProcessor` que delega el rechazo en el `HandlerExceptionResolver`, y el `FilterRegistrationBean` deshabilitado; verificar con los tests 6.2
-- [ ] 6.2 Tests "Preflight de un origen permitido", "Preflight de un origen no permitido", "Request de un origen no permitido" y "Sin orígenes configurados"; verificar que pasan
+- [ ] 6.1 Implementar la `CorsConfigurationSource` de D8 en la cadena de Spring Security, con el rechazo por defecto de Spring; verificar con los tests 6.2
+- [ ] 6.2 Tests "Preflight de un origen permitido", "Preflight de un origen no permitido", "Request de un origen no permitido" y "Sin orígenes configurados" (403 sin `Access-Control-Allow-Origin`); verificar que pasan
 
 ## 7. Swagger solo en desarrollo
 

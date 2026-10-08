@@ -25,8 +25,8 @@ Restricciones que dan forma al diseño:
 **Goals:**
 - Un único punto de verdad para validar tokens, con los mismos validadores en
   producción y en tests.
-- Que todo error, incluidos los de los filtros de seguridad y CORS, salga por el
-  mismo advice.
+- Que todo error, incluidos los de los filtros de seguridad, salga por el mismo
+  advice. La única excepción documentada es el rechazo de CORS (ver D8).
 - Que la regla de Swagger sin sesión no exista en producción, ni siquiera
   deshabilitada.
 
@@ -71,10 +71,12 @@ Errores:
 | 400 | `/errores/solicitud-invalida` | Falta el cuerpo o `tokenGoogle` está vacío, o el JSON está mal formado |
 | 401 | `/errores/token-google-invalido` | El token de Google no pasa la validación |
 | 403 | `/errores/correo-no-verificado` | `email_verified` no es `true` |
-| 403 | `/errores/origen-no-permitido` | El origen CORS no está configurado |
 | 409 | `/errores/cuenta-en-conflicto` | El correo ya está atado a otro `sub` |
 | 415 | `/errores/tipo-de-contenido-no-soportado` | `Content-Type` no es JSON |
 | 500 | `/errores/error-interno` | Falla la base o no se pueden obtener las claves de Google |
+
+El rechazo de CORS no figura en la tabla: sale con la respuesta por defecto de
+Spring (403, sin ProblemDetail).
 
 Se usa 200 y no 201: el JWT no es un recurso consultable, así que no hay
 `Location` que devolver.
@@ -189,6 +191,12 @@ Errores:
    - Si el correo nuevo pertenece a otro usuario, responde 409.
    - Su rol pasa a `ADMIN` si el correo es igual a `LIGA_ADMIN_EMAIL`. Si era
      `ADMIN` y el correo ya no coincide, pasa a `JUGADOR`.
+   - Así funciona el caso del admin que cambia su correo en Google y se
+     actualiza `LIGA_ADMIN_EMAIL`:
+     - Al arrancar, la reconciliación lo degrada, porque su fila todavía tiene
+       el correo viejo.
+     - En su login, con el mismo `sub`, se actualiza el correo y vuelve a
+       `ADMIN` en la misma fila.
    - Se emite un token de usuario.
 4. Si no existe y el correo es el del admin:
    - Hay un usuario con ese correo y `google_sub` nulo (recuperación manual): se
@@ -255,6 +263,10 @@ JWT), para pegar un token en "Authorize". Va bajo `@Profile("dev")`.
   sobrescribe la creación del cuerpo, para que ninguna excepción del framework
   quede con `about:blank`:
 
+  El `title` de cada respuesta es el del catálogo de la spec, guardado en
+  `TipoError`. Los 404, 405, 415 y 500 nunca usan el `type` ni el `title` de
+  `solicitud-invalida`.
+
   | excepción | type |
   |---|---|
   | `NoResourceFoundException` | `recurso-no-encontrado` |
@@ -276,15 +288,7 @@ JWT), para pegar un token en "Authorize". Va bajo `@Profile("dev")`.
   llegan al mismo advice.
 - **Logs:** la causa de un rechazo de token se loguea en `DEBUG`, con el motivo
   y nunca el token. Las respuestas 401 llevan `WWW-Authenticate: Bearer`.
-- **CORS:**
-  - Bean `corsFilter` propio, con un `CorsProcessor` que extiende
-    `DefaultCorsProcessor`.
-  - `rejectRequest` no escribe nada; `processRequest`, si el resultado es
-    rechazo, delega en el `HandlerExceptionResolver` con un
-    `ApiException(ORIGEN_NO_PERMITIDO)`.
-  - Spring Security usa el bean `corsFilter` si existe. Se registra un
-    `FilterRegistrationBean` deshabilitado para que el contenedor no lo agregue
-    dos veces.
+- **CORS:** no pasa por el advice. Ver D8.
 
 ### D8. CORS
 
@@ -296,8 +300,15 @@ JWT), para pegar un token en "Authorize". Va bajo `@Profile("dev")`.
   - `allowCredentials=false` y `maxAge` de 1 hora.
 - **Lista vacía:** no se registran orígenes, así que todo request con `Origin`
   ajeno se rechaza.
-- **Dónde vive:** en la cadena de Spring Security, no solo en MVC. Así el
+- **Dónde vive:** en la cadena de Spring Security
+  (`http.cors(c -> c.configurationSource(...))`), no solo en MVC. Así el
   preflight se resuelve antes de exigir token.
+- **Rechazo:** lo resuelve el `DefaultCorsProcessor` de Spring: 403 con su
+  cuerpo por defecto y sin `Access-Control-Allow-Origin`.
+  - Es una excepción documentada al formato ProblemDetail (decisión 19 de la
+    propuesta).
+  - El navegador no expone ese cuerpo al front, así que no vale la pena el
+    procesador propio que haría falta para mandarlo por el advice.
 
 ### D9. Configuración y arranque
 
@@ -326,7 +337,12 @@ incluye secretos.
 
 **Reconciliación (`ReconciliadorAdmin`):**
 - Es un `ApplicationRunner` transaccional.
-- Hace `UPDATE` a `JUGADOR` de los `ADMIN` cuyo correo es distinto del
+- Primero busca un `ADMIN` con `google_sub` nulo cuyo correo es distinto del
+  configurado. Si existe, lanza una `IllegalStateException` que nombra el id del
+  usuario y `LIGA_ADMIN_EMAIL`, sin modificar nada. Así la aplicación no
+  arranca: degradarlo violaría el CHECK de `google_sub`.
+  - Este comportamiento es un supuesto pendiente de la propuesta.
+- Si no, hace `UPDATE` a `JUGADOR` de los `ADMIN` cuyo correo es distinto del
   configurado.
 - Por cada degradado escribe un `WARN` con su id; no loguea el correo.
 - Es idempotente.
@@ -347,16 +363,21 @@ CREATE TABLE usuarios (
     creado_en     timestamptz  NOT NULL,
     modificado_en timestamptz  NOT NULL,
     CONSTRAINT usuarios_rol_valido CHECK (rol IN ('ADMIN', 'JUGADOR', 'HINCHA')),
-    CONSTRAINT usuarios_correo_minusculas CHECK (correo = lower(correo))
+    CONSTRAINT usuarios_correo_minusculas CHECK (correo = lower(correo)),
+    CONSTRAINT usuarios_sub_solo_admin_vacio CHECK (google_sub IS NOT NULL OR rol = 'ADMIN')
 );
 
 CREATE UNIQUE INDEX usuarios_un_solo_admin ON usuarios (rol) WHERE rol = 'ADMIN';
 ```
 
-- **`google_sub` nulable:** solo sirve para la recuperación manual del admin
-  (S13). PostgreSQL permite varios `NULL` en una columna `UNIQUE`.
-- **Columnas en español y snake_case:** coherente con la convención confirmada
-  para las tablas.
+- **`google_sub` nulable:**
+  - Solo sirve para la recuperación manual del admin; el CHECK
+    `usuarios_sub_solo_admin_vacio` lo garantiza.
+  - El login siempre crea filas con `sub`, así que el nulo solo aparece cuando
+    alguien lo borra a mano en la fila del admin.
+  - PostgreSQL permite varios `NULL` en una columna `UNIQUE`.
+- **Columnas en español y snake_case:** extiende a las columnas la convención
+  confirmada para las tablas. Es un supuesto pendiente de la propuesta.
 - **`id`:** UUID generado en la app (`@UuidGenerator` de Hibernate), sin depender
   de funciones de PostgreSQL 18.
 - **Auditoría:** `creado_en` y `modificado_en` con la auditoría de Spring Data
@@ -397,8 +418,16 @@ Las versiones las fija el parent de Boot.
   - Error 500: `@MockitoBean UsuarioRepository` que lanza
     `DataAccessResourceFailureException`.
   - Swagger: `@ActiveProfiles("dev")` y, aparte, sin perfil.
-  - Admin único: un test de repositorio verifica que la base rechaza un segundo
-    `ADMIN`.
+  - Admin único y "Usuario no admin sin sub": tests de repositorio que verifican
+    que la base rechaza la escritura.
+  - "Reconciliación con un admin sin sub": se inserta el admin sin `sub` con otro
+    correo, se ejecuta el `ReconciliadorAdmin` del contexto y se verifica la
+    excepción, su mensaje y que no cambió ninguna fila.
+  - "El admin cambia su correo y se actualiza la configuración": se inserta el
+    admin con el `sub` X y un correo viejo, se ejecuta el `ReconciliadorAdmin`
+    (lo degrada) y después se hace login con el `sub` X y el correo configurado
+    en el contexto de test.
+  - "Reuso de un token de Google vigente": el mismo token se envía dos veces.
 - **Existente:** `BackendFdljApplicationTests` recibe las propiedades
   obligatorias de prueba.
 
@@ -407,8 +436,8 @@ Las versiones las fija el parent de Boot.
 - **Un token robado (XSS en el front) sirve hasta 60 minutos.** → TTL corto. Dónde
   se guarda el token lo decide el front y queda fuera de alcance.
 - **Un ID token de Google robado permite loguearse dentro de su hora de vida
-  (sin `nonce`).** → Riesgo aceptado (S14). Un `nonce` se puede agregar sin
-  cambiar el contrato del JWT propio.
+  (sin `nonce`).** → Limitación aceptada en la propuesta, con su Scenario. Un
+  `nonce` se puede agregar sin cambiar el contrato del JWT propio.
 - **Rotar `LIGA_JWT_SECRET` desloguea a todos.** → Aceptable para la liga; se
   documenta.
 - **Logout solo del cliente.** → Limitación aceptada.
@@ -420,8 +449,11 @@ Las versiones las fija el parent de Boot.
   equivocado.** → Decoder explícito en la cadena y qualifier en el de Google.
 - **El filtro bearer se ejecuta en el login.** → Resolver que ignora
   `POST /api/v1/sesiones`, con su Scenario.
-- **El filtro `corsFilter` queda registrado dos veces.** →
-  `FilterRegistrationBean` deshabilitado.
+- **El rechazo de CORS no es ProblemDetail.** → Excepción documentada; el
+  navegador no expone ese cuerpo al front.
+- **Un admin sin `sub` y con otro correo bloquea el arranque.** → Es
+  intencional: es un estado manual a medio hacer, y el error dice qué fila y qué
+  variable revisar.
 - **El secreto se filtra en el error de arranque.** → Validación propia, con un
   test que verifica que el valor no aparece.
 - **Una consulta a la base por request para el rol.** → Lectura por PK; despreciable

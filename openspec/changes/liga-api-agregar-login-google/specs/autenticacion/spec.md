@@ -30,6 +30,22 @@ El endpoint MUST ignorar el header `Authorization`.
 - **WHEN** se envía `POST /api/v1/sesiones` con `tokenGoogle` ausente o vacío
 - **THEN** la respuesta es 400 con `type` `/errores/solicitud-invalida`
 
+### Requirement: Estado de registro en la respuesta del login
+La respuesta 200 del login SHALL indicar en `tipo` si la cuenta está registrada (`USUARIO`, con los datos del usuario) o pendiente de registro (`REGISTRO_PENDIENTE`, sin datos de usuario).
+Un login rechazado MUST no incluir token ni `tipo`.
+
+#### Scenario: El login indica cuenta registrada
+- **WHEN** un usuario registrado con rol `JUGADOR` envía `POST /api/v1/sesiones` con un token de Google válido
+- **THEN** la respuesta es 200 con `tipo` = `USUARIO` y `usuario.rol` = `JUGADOR`
+
+#### Scenario: El login indica registro pendiente
+- **WHEN** una cuenta de Google que no es usuario ni admin envía `POST /api/v1/sesiones` con un token de Google válido
+- **THEN** la respuesta es 200 con `tipo` = `REGISTRO_PENDIENTE` y sin el campo `usuario`
+
+#### Scenario: Un login rechazado no indica estado
+- **WHEN** se envía `POST /api/v1/sesiones` con un token de Google válido con `email_verified` = `false`
+- **THEN** la respuesta es 403 y el cuerpo no contiene `token` ni `tipo`
+
 ### Requirement: Validación del token de Google
 El sistema MUST aceptar un token de Google solo si cumple todo lo siguiente:
 - Está firmado con RS256 por una clave publicada por Google.
@@ -68,6 +84,10 @@ Cualquier falla responde 401 con un único `type`, sin revelar qué chequeo fall
 - **WHEN** se envía `POST /api/v1/sesiones` con un token de Google rechazado
 - **THEN** la respuesta es 401 y el log de la aplicación no contiene el token
 
+#### Scenario: Reuso de un token de Google vigente
+- **WHEN** se envía dos veces `POST /api/v1/sesiones` con el mismo token de Google válido y vigente (limitación aceptada: no se usa `nonce`)
+- **THEN** las dos respuestas son 200 con un JWT propio
+
 ### Requirement: Correo verificado
 El sistema MUST rechazar el login si el token de Google no trae `email_verified` en `true`, aunque el token sea válido en todo lo demás.
 
@@ -83,7 +103,6 @@ El sistema MUST rechazar el login si el token de Google no trae `email_verified`
 El admin es el usuario cuyo correo coincide con el correo de admin configurado. Se compara en minúsculas, sin quitar puntos ni sufijos.
 En el primer login con ese correo, el sistema SHALL crear al admin y fijar su `sub` de Google.
 Después, ese correo MUST aceptarse solo con el `sub` fijado.
-Si el `sub` fijado se borró a mano, el siguiente login con el correo configurado lo vuelve a fijar.
 
 #### Scenario: Primer login del admin
 - **WHEN** se envía `POST /api/v1/sesiones` con un token de Google válido cuyo correo, en minúsculas, es el configurado y no existe usuario con ese correo
@@ -94,12 +113,27 @@ Si el `sub` fijado se borró a mano, el siguiente login con el correo configurad
 - **WHEN** se envía `POST /api/v1/sesiones` con un token de Google válido con el correo del admin y un `sub` distinto del fijado
 - **THEN** la respuesta es 409 con `type` `/errores/cuenta-en-conflicto` y no se crea ni modifica ningún usuario
 
+### Requirement: Recuperación manual del acceso del admin
+Solo un usuario con rol `ADMIN` MUST poder tener el `sub` de Google vacío; la base rechaza cualquier otro usuario sin `sub`.
+Si el `sub` del admin se borró a mano, el siguiente login con el correo configurado SHALL fijar el `sub` nuevo.
+Si al arrancar hay un admin sin `sub` cuyo correo no es el configurado, la aplicación MUST no arrancar.
+Los escenarios de base y de arranque no tienen método ni ruta HTTP.
+
 #### Scenario: Recuperación manual del admin
 - **WHEN** el `sub` del admin se borró a mano y se envía `POST /api/v1/sesiones` con un token de Google válido con el correo configurado y un `sub` nuevo
-- **THEN** la respuesta es 200 con rol `ADMIN` y el `sub` nuevo queda fijado
+- **THEN** la respuesta es 200 con rol `ADMIN` y el `sub` nuevo queda fijado en la misma fila
+
+#### Scenario: Usuario no admin sin sub
+- **WHEN** se intenta guardar o dejar un usuario con rol `JUGADOR` o `HINCHA` sin `sub` de Google
+- **THEN** la base rechaza la escritura
+
+#### Scenario: Reconciliación con un admin sin sub
+- **WHEN** la aplicación arranca, hay un usuario `ADMIN` sin `sub` y su correo no coincide con `LIGA_ADMIN_EMAIL`
+- **THEN** el arranque falla con un error que nombra el id de ese usuario y `LIGA_ADMIN_EMAIL`, y no se modifica ningún usuario
 
 ### Requirement: Reconciliación del admin al arrancar
-Al arrancar, el sistema SHALL pasar a `JUGADOR` a todo usuario con rol `ADMIN` cuyo correo no coincida con el configurado, conservando su historial.
+Al arrancar, el sistema SHALL pasar a `JUGADOR` a todo usuario con rol `ADMIN` cuyo correo no coincida con el configurado, conservando su fila e historial.
+Excepción: un admin sin `sub` (ver Recuperación manual del acceso del admin).
 Por cada degradación MUST escribir un aviso en el log.
 El nuevo admin se crea o se promueve en su primer login.
 
@@ -124,6 +158,11 @@ Si el correo nuevo pertenece a otro usuario, el login se rechaza.
 #### Scenario: El admin cambia su correo en Google
 - **WHEN** el admin envía `POST /api/v1/sesiones` con un token de Google válido con su `sub` y un correo distinto del configurado
 - **THEN** la respuesta es 200 con rol `JUGADOR` y el correo queda actualizado
+
+#### Scenario: El admin cambia su correo y se actualiza la configuración
+- **WHEN** el admin cambió su correo en Google, `LIGA_ADMIN_EMAIL` se actualizó a ese correo nuevo, la aplicación arrancó, y el admin envía `POST /api/v1/sesiones` con un token de Google válido con su mismo `sub` y el correo nuevo
+- **THEN** la respuesta es 200 con rol `ADMIN` y el mismo `usuario.id` que antes
+- **AND** el correo queda actualizado y no se crea otro usuario
 
 #### Scenario: Correo nuevo de otro usuario
 - **WHEN** se envía `POST /api/v1/sesiones` con un token de Google válido cuyo correo ya pertenece a otro usuario con otro `sub`
@@ -248,6 +287,7 @@ El sistema SHALL aceptar requests cruzadas solo de los orígenes configurados, c
 No MUST habilitar credenciales del navegador (cookies).
 Los preflight de un origen permitido no exigen JWT propio.
 Sin orígenes configurados, no se acepta ningún origen cruzado.
+El rechazo de un origen sale con la respuesta por defecto de Spring (403, sin ProblemDetail). Es una excepción documentada al formato de errores.
 
 #### Scenario: Preflight de un origen permitido
 - **WHEN** se envía `OPTIONS /api/v1/sesiones/actual` sin `Authorization`, con `Origin` permitido, `Access-Control-Request-Method: GET` y `Access-Control-Request-Headers: authorization`
@@ -255,15 +295,15 @@ Sin orígenes configurados, no se acepta ningún origen cruzado.
 
 #### Scenario: Preflight de un origen no permitido
 - **WHEN** se envía `OPTIONS /api/v1/sesiones` con un `Origin` que no está en la configuración y `Access-Control-Request-Method: POST`
-- **THEN** la respuesta es 403 con `type` `/errores/origen-no-permitido` y sin `Access-Control-Allow-Origin`
+- **THEN** la respuesta es 403 con la respuesta por defecto de Spring, sin `Access-Control-Allow-Origin`
 
 #### Scenario: Request de un origen no permitido
 - **WHEN** se envía `POST /api/v1/sesiones` con un `Origin` que no está en la configuración
-- **THEN** la respuesta es 403 con `type` `/errores/origen-no-permitido`
+- **THEN** la respuesta es 403 con la respuesta por defecto de Spring, sin `Access-Control-Allow-Origin`
 
 #### Scenario: Sin orígenes configurados
 - **WHEN** no hay orígenes configurados y se envía `OPTIONS /api/v1/sesiones` con cualquier `Origin` y `Access-Control-Request-Method: POST`
-- **THEN** la respuesta es 403 con `type` `/errores/origen-no-permitido`
+- **THEN** la respuesta es 403 sin `Access-Control-Allow-Origin`
 
 ### Requirement: Configuración obligatoria al arrancar
 La aplicación MUST no arrancar si:
@@ -297,12 +337,13 @@ Estos escenarios no tienen método ni ruta HTTP porque la aplicación no llega a
 
 ### Requirement: Errores como ProblemDetail con type estable
 Toda respuesta de error SHALL ser un ProblemDetail (RFC 9457) con `type`, `title`, `status` y `detail`.
-El `type` es una URI relativa estable del catálogo de la spec `autenticacion`, nunca `about:blank`.
+El `type` y el `title` son los del catálogo de la spec `autenticacion`; el `type` nunca es `about:blank`.
 Los errores 5xx MUST no exponer detalles internos.
+Única excepción: el rechazo de CORS (ver CORS por configuración).
 
 #### Scenario: Método no permitido
 - **WHEN** se envía `DELETE /api/v1/sesiones/actual` con un token de usuario válido
-- **THEN** la respuesta es 405 con `type` `/errores/metodo-no-permitido`
+- **THEN** la respuesta es 405 con `type` `/errores/metodo-no-permitido` y `title` "Método no permitido"
 
 #### Scenario: Tipo de contenido no soportado
 - **WHEN** se envía `POST /api/v1/sesiones` con `Content-Type: text/plain`
@@ -314,25 +355,26 @@ Los errores 5xx MUST no exponer detalles internos.
 
 #### Scenario: Error inesperado
 - **WHEN** se envía `POST /api/v1/sesiones` con un token de Google válido y falla el acceso a la base
-- **THEN** la respuesta es 500 con `type` `/errores/error-interno` y el `detail` no contiene trazas, SQL ni nombres de clases
+- **THEN** la respuesta es 500 con `type` `/errores/error-interno` y `title` "Error interno", y el `detail` no contiene trazas, SQL ni nombres de clases
 
 ### Requirement: Catálogo de errores transversales
 El sistema SHALL usar estos `type`:
 
-| type | status |
-|---|---|
-| `/errores/no-autenticado` | 401 |
-| `/errores/token-vencido` | 401 |
-| `/errores/token-google-invalido` | 401 |
-| `/errores/correo-no-verificado` | 403 |
-| `/errores/registro-pendiente` | 403 |
-| `/errores/origen-no-permitido` | 403 |
-| `/errores/cuenta-en-conflicto` | 409 |
-| `/errores/solicitud-invalida` | 400, u otro 4xx del framework sin `type` propio, que conserva su status |
-| `/errores/recurso-no-encontrado` | 404 |
-| `/errores/metodo-no-permitido` | 405 |
-| `/errores/tipo-de-contenido-no-soportado` | 415 |
-| `/errores/error-interno` | 500 |
+| type | status | title |
+|---|---|---|
+| `/errores/no-autenticado` | 401 | No autenticado |
+| `/errores/token-vencido` | 401 | Token vencido |
+| `/errores/token-google-invalido` | 401 | Token de Google inválido |
+| `/errores/correo-no-verificado` | 403 | Correo no verificado |
+| `/errores/registro-pendiente` | 403 | Registro pendiente |
+| `/errores/cuenta-en-conflicto` | 409 | Cuenta en conflicto |
+| `/errores/solicitud-invalida` | 400, u otro 4xx del framework sin `type` propio, que conserva su status | Solicitud inválida |
+| `/errores/recurso-no-encontrado` | 404 | Recurso no encontrado |
+| `/errores/metodo-no-permitido` | 405 | Método no permitido |
+| `/errores/tipo-de-contenido-no-soportado` | 415 | Tipo de contenido no soportado |
+| `/errores/error-interno` | 500 | Error interno |
+
+Los 404, 405, 415 y 500 MUST usar su propio `type` y `title`, nunca los de `/errores/solicitud-invalida`.
 
 #### Scenario: El type y el status coinciden con el catálogo
 - **WHEN** se envía `GET /api/v1/partidos` sin header `Authorization`
@@ -340,4 +382,4 @@ El sistema SHALL usar estos `type`:
 
 #### Scenario: Ningún error usa about:blank
 - **WHEN** se envía `GET /api/v1/no-existe` con un token de usuario válido
-- **THEN** la respuesta es 404 con `type` `/errores/recurso-no-encontrado` y no `about:blank`
+- **THEN** la respuesta es 404 con `type` `/errores/recurso-no-encontrado` y `title` "Recurso no encontrado", no `about:blank` ni "Solicitud inválida"

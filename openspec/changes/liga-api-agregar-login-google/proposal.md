@@ -61,6 +61,8 @@ Contratos transversales nuevos:
 - Header `Authorization: Bearer <jwt>` en todo endpoint no público.
 - Cuerpo de error ProblemDetail con los `type` del catálogo de la spec
   `autenticacion`.
+  - Excepción: el rechazo de CORS sale con la respuesta por defecto de Spring
+    (403, sin ProblemDetail).
 - Variables de entorno: `GOOGLE_CLIENT_ID`, `LIGA_ADMIN_EMAIL`, `LIGA_JWT_SECRET`
   y `LIGA_CORS_ORIGINS`.
 - Esquema de base: tabla `usuarios` (V1).
@@ -111,51 +113,64 @@ Confirmadas explícitamente por una persona:
     de 32 bytes.
 11. **Aviso de degradación:** al degradar a un admin al arrancar, se escribe un
     aviso en el log.
+12. **Reconciliación al arrancar:** si cambia `LIGA_ADMIN_EMAIL`, al arrancar se
+    degrada a JUGADOR al admin cuyo correo ya no coincide.
+13. **Login sin registro:** quien no está registrado recibe el token de registro
+    pendiente, que en este change solo habilita `GET /api/v1/sesiones/actual`.
+14. **Modelo mínimo:** el modelo de este change cubre solo lo que necesita el
+    admin, sin estados de aprobación de registro.
+15. **Forma de los endpoints:**
+    - Login en `POST /api/v1/sesiones` con respuesta 200.
+    - "Quién soy" en `GET /api/v1/sesiones/actual`.
+    - Cuerpos según `design.md`.
+    - La respuesta del login indica si la cuenta está registrada (`tipo` =
+      `USUARIO`) o pendiente de registro (`tipo` = `REGISTRO_PENDIENTE`).
+16. **Rol en cada login:**
+    - El rol ADMIN se recalcula en cada login: quien tiene el `sub` fijado y un
+      correo distinto del configurado deja de ser admin.
+    - Si el admin cambia su correo en Google y se actualiza `LIGA_ADMIN_EMAIL`,
+      con el mismo `sub` conserva su fila y vuelve a ser admin.
+17. **Correo ya usado:** si un correo que ya pertenece a un usuario llega con
+    otro `sub` y no es el del admin, responde 409 `/errores/cuenta-en-conflicto`.
+18. **Login con token viejo:** el login ignora el header `Authorization`.
+19. **Catálogo de errores:**
+    - Incluye `/errores/tipo-de-contenido-no-soportado` (415).
+    - El rechazo de CORS no tiene `type`: sale con la respuesta por defecto de
+      Spring, como excepción documentada al formato de errores.
+    - `/errores/acceso-denegado` se cataloga con el primer endpoint restringido
+      por rol.
+20. **CORS vacío:** si `LIGA_CORS_ORIGINS` está vacía, no se acepta ningún origen
+    cruzado y la aplicación arranca igual.
+21. **Medida del secreto:** los 32 bytes de `LIGA_JWT_SECRET` se miden sobre el
+    valor en UTF-8, sin decodificarlo.
+22. **Claims del JWT propio:**
+    - `iss` = `backend-fdlj` y claim `tipo` (`USUARIO` o `REGISTRO_PENDIENTE`).
+    - El token de usuario lleva `sub` = UUID propio y no lleva el rol.
+    - El token de registro pendiente lleva el `sub` de Google, el correo y el
+      nombre.
+23. **Perfil y entorno:**
+    - El perfil de desarrollo se llama `dev`.
+    - Front y API pueden estar en dominios distintos (hosting sin definir).
+    - Tolerancia de reloj de 60 segundos.
+24. **Recuperación del admin:** `google_sub` es nulable solo para el admin, con
+    `CHECK (google_sub IS NOT NULL OR rol = 'ADMIN')`.
+25. **`nonce`:** no se usa en el login con Google.
 
 ## Supuestos pendientes de confirmar
 
-De la exploración:
-- **S1. Cuándo se reconcilia el admin.** Si cambia `LIGA_ADMIN_EMAIL`, al
-  arrancar se degrada a JUGADOR al admin cuyo correo ya no coincide.
-- **S2. Login sin registro.** Quien no está registrado recibe el token de
-  registro pendiente, que en este change solo habilita
-  `GET /api/v1/sesiones/actual`.
-- **S3. Modelo mínimo.** El modelo de este change cubre solo lo que necesita el
-  admin, sin estados de aprobación de registro.
-
-Del diseño de este change:
-- **S4. Forma de los endpoints.** Login en `POST /api/v1/sesiones` con
-  respuesta 200, "quién soy" en `GET /api/v1/sesiones/actual`, y la forma de sus
-  cuerpos (ver `design.md`).
-- **S5. Rol en cada login.** El rol ADMIN también se recalcula en cada login:
-  quien tiene el `sub` fijado y un correo distinto del configurado deja de ser
-  admin. Esto incluye al admin que cambia su correo en Google.
-- **S6. Correo ya usado.** Un correo que ya pertenece a un usuario llega con
-  otro `sub` y no es el del admin: responde 409 `/errores/cuenta-en-conflicto`.
-- **S7. Login con token viejo.** El login ignora el header `Authorization`, para
-  que un token propio vencido no impida volver a loguearse.
-- **S8. Catálogo de errores.** Además de los confirmados, el catálogo incluye
-  `/errores/origen-no-permitido` (CORS) y `/errores/tipo-de-contenido-no-soportado`
-  (415). `/errores/acceso-denegado` (403 por rol) se cataloga con el primer
-  endpoint restringido por rol: en este change ningún usuario registrado tiene
-  denegaciones.
-- **S9. CORS vacío.** Si `LIGA_CORS_ORIGINS` está vacía, no se acepta ningún
-  origen cruzado; la aplicación arranca igual.
-- **S10. Medida del secreto.** Los 32 bytes de `LIGA_JWT_SECRET` se miden sobre
-  el valor en UTF-8, sin decodificarlo.
-- **S11. Claims del JWT propio.**
-  - `iss` = `backend-fdlj`, claim `tipo` (`USUARIO` o `REGISTRO_PENDIENTE`).
-  - El token de usuario lleva `sub` = UUID propio y no lleva el rol.
-  - El token de registro pendiente lleva el `sub` de Google, el correo y el
-    nombre.
-- **S12. Perfil y entorno.**
-  - El perfil de desarrollo se llama `dev`.
-  - Front y API pueden estar en dominios distintos: hosting sin definir.
-  - La tolerancia de reloj es de 60 segundos.
-- **S13. Recuperación del admin.** `google_sub` es nulable solo para permitir la
-  recuperación manual del admin; en cualquier otro caso se completa en el primer
-  login.
-- **S14. `nonce`.** No se usa `nonce` en el login con Google.
+- **Columnas en español y snake_case** (`correo`, `creado_en`,
+  `modificado_en`). La decisión 9 confirma la convención para las tablas; la
+  extiendo a las columnas.
+- **Reconciliación con un admin sin `sub`.** Caso: al arrancar hay un ADMIN con
+  `google_sub` nulo (recuperación a medio hacer) cuyo correo no coincide con
+  `LIGA_ADMIN_EMAIL`.
+  - No se puede degradar a JUGADOR, porque violaría el CHECK de la decisión 24.
+  - Propuesta: la aplicación no arranca, con un error que nombra el id del
+    usuario y `LIGA_ADMIN_EMAIL`, para que se complete el `sub` o se corrija la
+    configuración.
+  - Alternativas descartadas:
+    - Dejarlo como ADMIN: el nuevo admin chocaría con el índice de admin único.
+    - Borrarlo: no hay baja de usuarios.
 
 ## Limitaciones aceptadas
 
@@ -165,6 +180,9 @@ Del diseño de este change:
   admin cambia (por ejemplo, porque la cuenta de Google se recreó), el login
   responde 409. Se recupera a mano borrando el `sub` fijado en la base; el
   siguiente login con el correo configurado lo vuelve a fijar.
+- **ID token de Google robado.** Sin `nonce`, quien robe un ID token de Google
+  válido puede loguearse con él hasta que venza (alrededor de 1 hora) y recibir
+  un JWT propio. El backend no puede distinguirlo de un login legítimo.
 
 ## Fuera de alcance
 
@@ -195,13 +213,14 @@ Del diseño de este change:
   cubren la lógica real de validación. Los tokens de prueba se firman con esa
   clave.
 - Para Swagger hay un test con el perfil `dev` y otro sin perfil.
-- Arranque fallido por configuración:
-  - Se prueba con contextos que deben fallar al levantarse
+- Arranque fallido y restricciones de la base:
+  - El arranque fallido se prueba con contextos que deben fallar al levantarse
     (`ApplicationContextRunner`, o `SpringApplication` con propiedades
     inválidas).
-  - Estos Scenarios no tienen método ni ruta HTTP porque la aplicación no llega
-    a atender requests. Es una excepción explícita a la regla de que cada
-    escenario indica método, ruta y código de estado.
+  - Las restricciones de la base se prueban con tests de repositorio.
+  - Estos Scenarios no tienen método ni ruta HTTP: la aplicación no llega a
+    atender requests, o la regla vive en la base. Es una excepción explícita a
+    la regla de que cada escenario indica método, ruta y código de estado.
 - `./mvnw test` en verde antes de cada commit de tareas;
   `openspec validate liga-api-agregar-login-google --strict` antes del PR.
 
