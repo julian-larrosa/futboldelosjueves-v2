@@ -282,10 +282,13 @@ Organización del trabajo
 1. **login-google**: Mecanismo de sesión: resuelto (5.3). Logout: no hay
    endpoint; es solo del cliente (limitación aceptada). Quien está autenticado
    en Google pero no registrado recibe un token de registro pendiente de 15
-   minutos que solo sirve para consultar su sesión. Esto último es un supuesto
-   pendiente de confirmar en la propuesta del change.
+   minutos que solo sirve para consultar su sesión (decisión confirmada en la
+   propuesta del change).
 2. **registro-usuario**: ¿Un JUGADOR puede pasar a HINCHA? ¿Qué datos se piden
-   además del Gmail?
+   además del Gmail? Supuesto pendiente de confirmar: el registro requiere la
+   aprobación del admin. Si se confirma, falta decidir si va en este change o
+   en uno nuevo, qué pasa con un registro rechazado y si se avisa al admin de
+   las solicitudes nuevas.
 3. **consulta-usuarios**: ¿Quién puede listar usuarios y qué ve cada rol?
 4. **gestion-partidos**: ¿Qué datos tiene un partido además de la fecha? ¿En
    qué estados se puede borrar?
