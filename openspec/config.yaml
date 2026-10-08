@@ -1,0 +1,46 @@
+schema: spec-driven
+
+context: |
+  Escribir los artefactos en español, conservando en inglés los encabezados
+  del formato OpenSpec (Requirement, Scenario, ADDED/MODIFIED/REMOVED) y las
+  palabras clave SHALL/MUST.
+  API REST de una liga de partidos entre amigos. Todos los endpoints exigen
+  sesión con login de Google; no hay endpoints públicos.
+  Errores como ProblemDetail (RFC 9457) desde un único @RestControllerAdvice,
+  con un type estable por cada caso de error.
+  Rutas bajo /api/v1, recursos en plural.
+  Paquetes: primero por funcionalidad y después por capa
+  (controller, service, repository, model, dto).
+  Los services devuelven DTOs (records), nunca entidades JPA; open-in-view
+  está desactivado a propósito.
+  PostgreSQL con migraciones Flyway: cada change que toca el modelo incluye
+  su migración, y Hibernate solo valida el esquema (ddl-auto=validate).
+  Los tests de persistencia e integración corren contra PostgreSQL real con
+  Testcontainers, nunca contra H2.
+  La autenticación se implementa dentro de este proyecto.
+
+rules:
+  proposal:
+    - "Incluir las secciones de la plantilla que falten: Change ID, Contratos afectados, Estrategia de testing, Componentes transversales involucrados y Aprobadores requeridos"
+    - "En Decisiones confirmadas listar solo lo que una persona confirmó explícitamente; todo lo demás va como supuesto pendiente"
+    - "Indicar siempre qué queda fuera de alcance"
+  specs:
+    - "Cada requirement incluye al menos un escenario de error además del caso feliz"
+    - "Cada escenario indica método HTTP, ruta y código de estado esperado"
+    - "Sin contradicciones ni términos ambiguos; cada término del modelo tiene un único significado"
+  design:
+    - "Listar los endpoints nuevos o modificados con su request y response"
+    - "Indicar la migración Flyway que crea o modifica las tablas"
+  tasks:
+    - "Cada escenario de la spec tiene al menos una tarea de test que lo nombra exactamente"
+    - "Terminar con las tareas de cierre: validate, PR con el change-id, aprobación humana y archive"
+
+operations:
+  apply:
+    guidance:
+      - "Ejecutar ./mvnw test al terminar cada grupo de tareas; no marcar como completa una tarea con tests fallando"
+      - "Si el comportamiento o el diseño deben cambiar, actualizar primero spec, design y tasks, y después el código"
+      - "Al terminar cada grupo con tests en verde, proponer un commit que nombre el change-id y las tareas"
+  archive:
+    guidance:
+      - "Confirmar que todos los tests pasan antes de archivar"
