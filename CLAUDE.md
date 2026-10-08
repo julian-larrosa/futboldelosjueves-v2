@@ -12,7 +12,7 @@ por una propuesta aprobada en openspec/changes/.
 4. La spec se actualiza ANTES que el código, nunca después.
 5. Las aprobaciones las publica siempre una persona; nunca publicar
    comentarios de aprobación ni aprobar en nombre del usuario.
-6. Al terminar, /opsx:archive fusiona los deltas en la spec viva.
+6. Con el PR revisado y los tests en verde, /opsx:archive como último commit del branch, antes del merge.
 
 ## Convenciones
 - La arquitectura está en openspec/config.yaml (campo context); respetarla
